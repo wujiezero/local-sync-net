@@ -1,4 +1,5 @@
-import { toast } from "./toast.js?v=toast2";
+import { toast } from "./toast.js?v=m3";
+import { openDialog } from "./dialog.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -170,14 +171,20 @@ els.newTag.addEventListener("keydown", (ev) => {
 });
 els.join.addEventListener("click", connect);
 
-els.catalog.addEventListener("click", (ev) => {
+els.catalog.addEventListener("click", async (ev) => {
   const btn = ev.target.closest("[data-act]");
   if (!btn) return;
   const row = btn.closest(".catalog-item");
   const from = row?.dataset.tag;
   if (!from) return;
   if (btn.dataset.act === "delete") {
-    if (confirm(`删除标签「${from}」？已用该标签的消息会去掉它。`)) {
+    const ok = await openDialog({
+      title: "删除标签",
+      body: `删除标签「${from}」？已用该标签的消息会去掉它。`,
+      confirmText: "删除",
+      danger: true,
+    });
+    if (ok) {
       send({ type: "tags.delete", name: from });
       toast("已删除标签");
     }

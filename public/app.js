@@ -1,4 +1,5 @@
-import { toast } from "./toast.js?v=fold1";
+import { toast } from "./toast.js?v=m3";
+import { openDialog } from "./dialog.js";
 import { marked } from "./vendor/marked.esm.js";
 import DOMPurify from "./vendor/purify.es.mjs";
 import hljs from "./vendor/hljs-languages.js";
@@ -32,10 +33,8 @@ const els = {
   archiveImport: $("archive-import"),
   archiveImportFile: $("archive-import-file"),
   confirmModal: $("confirm-modal"),
-  confirmCode: $("confirm-code"),
-  confirmInput: $("confirm-input"),
-  confirmCancel: $("confirm-cancel"),
-  confirmOk: $("confirm-ok"),
+  confirmInput: $("dialog-input"),
+  confirmOk: $("dialog-ok"),
   toast: $("toast"),
   limitHint: $("limit-hint"),
   replyBar: $("reply-bar"),
@@ -49,12 +48,24 @@ const els = {
   inlineReplyDraft: $("inline-reply-draft"),
   inlineReplySend: $("inline-reply-send"),
   inlineReplyCancel: $("inline-reply-cancel"),
+  lightbox: $("lightbox"),
+  lightboxImage: $("lightbox-image"),
+  lightboxClose: $("lightbox-close"),
   draftTags: $("draft-tags"),
   tagFilters: $("tag-filters"),
   fromTime: $("from-time"),
   toTime: $("to-time"),
   resetFilters: $("reset-filters"),
   filterCount: $("filter-count"),
+  rail: $("rail"),
+  railToggle: $("rail-toggle"),
+  railClose: $("rail-close"),
+  railScrim: $("rail-scrim"),
+  railLogout: $("rail-logout"),
+  railArchivesLink: $("rail-archives-link"),
+  railSettingsLink: $("rail-settings-link"),
+  filters: $("filters"),
+  filterToggle: $("filter-toggle"),
 };
 
 const DEVICE_KEY = "clipmesh.deviceId";
@@ -76,6 +87,7 @@ const state = {
   archives: [],
   openArchive: null,
   pendingDeleteId: null,
+  sending: false,
 };
 
 marked.use({
@@ -221,6 +233,8 @@ function settingsHref() {
 function syncSettingsLink() {
   const link = document.getElementById("settings-link");
   if (link) link.href = settingsHref();
+  const railLink = document.getElementById("rail-settings-link");
+  if (railLink) railLink.href = settingsHref();
   for (const a of document.querySelectorAll('a[href="/settings"], a[href^="/settings?"]')) {
     if (a.id === "settings-link" || a.getAttribute("href")?.startsWith("/settings")) {
       if (a.id === "settings-link" || a.textContent.includes("配置")) a.href = settingsHref();
@@ -404,20 +418,30 @@ function closeReplyModal() {
 }
 
 function sendInlineReply() {
+  if (state.sending) return;
   const text = els.inlineReplyDraft?.value || "";
   if (!text.trim() || !state.replyTo?.id) return;
+  state.sending = true;
   const payload = { type: "text", text, replyTo: state.replyTo.id };
   if (state.draftTags.length) payload.tags = state.draftTags;
-  if (send({ type: "push", payload })) {
-    const sent = text.trim();
-    const top = (els.draft?.value || "").trim();
-    if (top && (top === sent || top.endsWith(sent))) {
-      els.draft.value = top === sent ? "" : top.slice(0, top.length - sent.length).replace(/\n+$/, "");
-      els.draftCount.textContent = String(els.draft.value.length);
-      updateFormatHint();
+  if (els.inlineReplySend) els.inlineReplySend.disabled = true;
+  try {
+    if (send({ type: "push", payload })) {
+      const sent = text.trim();
+      const top = (els.draft?.value || "").trim();
+      if (top && (top === sent || top.endsWith(sent))) {
+        els.draft.value = top === sent ? "" : top.slice(0, top.length - sent.length).replace(/\n+$/, "");
+        els.draftCount.textContent = String(els.draft.value.length);
+        updateFormatHint();
+      }
+      closeReplyModal();
+      toast("已发送回复");
     }
-    closeReplyModal();
-    toast("已发送回复");
+  } finally {
+    setTimeout(() => {
+      state.sending = false;
+      if (els.inlineReplySend) els.inlineReplySend.disabled = false;
+    }, 900);
   }
 }
 
@@ -517,6 +541,34 @@ function threadTree(clips) {
     .map(nest);
 }
 
+function ageBucket(ts) {
+  const minutes = (Date.now() - Number(ts || 0)) / 60000;
+  if (minutes < 5) return "fresh";
+  if (minutes < 10) return "warm";
+  if (minutes < 60) return "old";
+  return "archive";
+}
+
+function formatAgo(ts) {
+  const minutes = Math.max(0, Math.floor((Date.now() - Number(ts || 0)) / 60000));
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  return `${days} 天前`;
+}
+
+function refreshAges() {
+  for (const el of document.querySelectorAll("article.clip[data-created]")) {
+    const created = Number(el.dataset.created);
+    el.classList.remove("age-fresh", "age-warm", "age-old", "age-archive");
+    el.classList.add(`age-${ageBucket(created)}`);
+    const ago = el.querySelector(".age-ago");
+    if (ago) ago.textContent = formatAgo(created);
+  }
+}
+
 function renderClip(clip, { isReply = false, readOnly = false } = {}) {
   const canCopy = Boolean(clip.text);
   const tags = clip.tags || [];
@@ -537,7 +589,7 @@ function renderClip(clip, { isReply = false, readOnly = false } = {}) {
 
   let body = "";
   if (clip.type === "image" && clip.file) {
-    body = `<img class="clip-image" src="${clip.file.url}" alt="${escapeHtml(clip.file.name)}" />`;
+    body = `<img class="clip-image" src="${clip.file.url}" alt="${escapeHtml(clip.file.name)}" data-act="preview" />`;
     if (clip.text) body += `<div style="margin-top:10px">${wrapFold(renderRichText(clip.text, clip.id), clip)}</div>`;
   } else if (clip.type === "file" && clip.file) {
     body = `<div class="clip-file"><div><a href="${clip.file.url}" download="${escapeHtml(clip.file.name)}">${escapeHtml(clip.file.name)}</a><div class="hint">${formatBytes(clip.file.size)} · ${escapeHtml(clip.file.mime)}</div></div></div>`;
@@ -556,10 +608,13 @@ function renderClip(clip, { isReply = false, readOnly = false } = {}) {
     ? `<span class="edited-mark">已编辑 ${formatTime(clip.editedAt)}</span>`
     : "";
 
-  return `<article class="clip${isReply ? " is-reply" : ""}" data-id="${clip.id}">
+  const age = ageBucket(clip.createdAt);
+  return `<article class="clip${isReply ? " is-reply" : " is-root"} age-${age}" data-id="${clip.id}" data-created="${clip.createdAt}">
     <div class="clip-head">
       <div class="clip-head-main">
+        ${isReply ? `<span class="kind reply">回复</span>` : `<span class="kind root">原消息</span>`}
         <span class="seq mono">${formatSeq(clip.seq)}</span>
+        <span class="age-ago">${formatAgo(clip.createdAt)}</span>
         <span class="stamp mono">${formatTime(clip.createdAt)}</span>
         ${extra}
         <b>${escapeHtml(clip.deviceName)}</b>
@@ -760,6 +815,15 @@ function closeConfirm() {
   if (els.confirmInput) els.confirmInput.value = "";
 }
 
+async function askConfirm(title, body, confirmText = "确定") {
+  return Boolean(await openDialog({ title, body, confirmText, danger: true }));
+}
+
+async function askPrompt(title, body, value = "") {
+  const result = await openDialog({ title, body, value, confirmText: "保存", placeholder: "名称" });
+  return result == null ? null : String(result);
+}
+
 function renderTimeline() {
   renderDraftTags();
   renderTagFilters();
@@ -780,6 +844,7 @@ function renderTimeline() {
     return;
   }
   els.timeline.innerHTML = threadTree(shown).map((node) => renderThread(node)).join("");
+  refreshAges();
 }
 
 function send(payload) {
@@ -881,10 +946,20 @@ function connect() {
       if (els.archiveDrawer) els.archiveDrawer.hidden = false;
     } else if (msg.type === "archive.challenge") {
       state.pendingDeleteId = msg.id;
-      if (els.confirmCode) els.confirmCode.textContent = msg.code;
-      if (els.confirmInput) els.confirmInput.value = "";
-      if (els.confirmModal) els.confirmModal.hidden = false;
-      els.confirmInput?.focus();
+      openDialog({
+        title: "删除归档",
+        body: `删除后无法恢复。请输入验证码：${msg.code}`,
+        confirmText: "确认删除",
+        danger: true,
+        placeholder: "6 位验证码",
+        inputMode: "numeric",
+      }).then((code) => {
+        if (!code || !state.pendingDeleteId) {
+          state.pendingDeleteId = null;
+          return;
+        }
+        send({ type: "archive.delete", id: state.pendingDeleteId, code: String(code).trim() });
+      });
     } else if (msg.type === "archives") {
       state.archives = msg.archives || [];
       renderArchives();
@@ -930,6 +1005,7 @@ async function uploadAndPush(file, extraText) {
 
 function resetComposer() {
   els.draft.value = "";
+  els.draft.style.height = "auto";
   els.draftCount.textContent = "0";
   state.pendingFile = null;
   if (els.fileInput) els.fileInput.value = "";
@@ -940,32 +1016,73 @@ function resetComposer() {
   cancelComposeMode();
 }
 
+function openLightbox(src, alt) {
+  if (!els.lightbox || !els.lightboxImage || !src) return;
+  els.lightboxImage.src = src;
+  els.lightboxImage.alt = alt || "";
+  els.lightbox.hidden = false;
+}
+
+function closeLightbox() {
+  if (!els.lightbox) return;
+  els.lightbox.hidden = true;
+  if (els.lightboxImage) els.lightboxImage.removeAttribute("src");
+}
+
 async function sendComposer() {
+  if (state.sending) return;
   const text = els.draft.value;
   if (state.editingId) {
     const clip = currentEdit();
     if (clip?.type === "text" && !text.trim()) return;
-    if (send({ type: "edit", id: state.editingId, text, tags: state.draftTags })) {
-      resetComposer();
-      toast("已保存修改");
+    state.sending = true;
+    if (els.send) els.send.disabled = true;
+    try {
+      if (send({ type: "edit", id: state.editingId, text, tags: state.draftTags })) {
+        resetComposer();
+        toast("已保存修改");
+      }
+    } finally {
+      setTimeout(() => {
+        state.sending = false;
+        if (els.send) els.send.disabled = false;
+      }, 900);
     }
     return;
   }
   if (state.pendingFile) {
-    if (await uploadAndPush(state.pendingFile, text)) {
-      resetComposer();
-      toast("已发送附件");
+    state.sending = true;
+    if (els.send) els.send.disabled = true;
+    try {
+      if (await uploadAndPush(state.pendingFile, text)) {
+        resetComposer();
+        toast("已发送附件");
+      }
+    } finally {
+      setTimeout(() => {
+        state.sending = false;
+        if (els.send) els.send.disabled = false;
+      }, 900);
     }
     return;
   }
   if (!text.trim()) return;
-  const payload = { type: "text", text };
-  const modalOpen = els.replyModal && !els.replyModal.hidden;
-  if (state.replyTo?.id && !modalOpen) payload.replyTo = state.replyTo.id;
-  if (state.draftTags.length) payload.tags = state.draftTags;
-  if (send({ type: "push", payload })) {
-    resetComposer();
-    toast(payload.replyTo ? "已发送回复" : "已发送");
+  state.sending = true;
+  if (els.send) els.send.disabled = true;
+  try {
+    const payload = { type: "text", text };
+    const modalOpen = els.replyModal && !els.replyModal.hidden;
+    if (state.replyTo?.id && !modalOpen) payload.replyTo = state.replyTo.id;
+    if (state.draftTags.length) payload.tags = state.draftTags;
+    if (send({ type: "push", payload })) {
+      resetComposer();
+      toast(payload.replyTo ? "已发送回复" : "已发送");
+    }
+  } finally {
+    setTimeout(() => {
+      state.sending = false;
+      if (els.send) els.send.disabled = false;
+    }, 900);
   }
 }
 
@@ -975,10 +1092,46 @@ function updateFormatHint() {
   els.formatHint.textContent = detected.label;
 }
 
+function autoGrow() {
+  if (!els.draft) return;
+  els.draft.style.height = "auto";
+  els.draft.style.height = `${Math.min(els.draft.scrollHeight, window.innerHeight * 0.4)}px`;
+}
+
 els.draft.addEventListener("input", () => {
   els.draftCount.textContent = String(els.draft.value.length);
   updateFormatHint();
+  autoGrow();
 });
+
+function openRail() {
+  els.rail?.classList.add("is-open");
+  if (els.railScrim) els.railScrim.hidden = false;
+}
+
+function closeRail() {
+  els.rail?.classList.remove("is-open");
+  if (els.railScrim) els.railScrim.hidden = true;
+}
+
+els.railToggle?.addEventListener("click", openRail);
+els.railClose?.addEventListener("click", closeRail);
+els.railScrim?.addEventListener("click", closeRail);
+els.rail?.addEventListener("click", (ev) => {
+  if (ev.target.closest("a, #join")) closeRail();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") closeRail();
+});
+
+els.filterToggle?.addEventListener("click", () => {
+  if (!els.filters) return;
+  els.filters.hidden = !els.filters.hidden;
+});
+
+if (window.matchMedia("(max-width: 920px)").matches && els.filters) {
+  els.filters.hidden = true;
+}
 
 els.draft.addEventListener("keydown", (ev) => {
   if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
@@ -1027,17 +1180,25 @@ els.resetFilters?.addEventListener("click", () => {
   renderTimeline();
 });
 
-els.archiveRoom?.addEventListener("click", () => {
+els.archiveRoom?.addEventListener("click", async () => {
   if (!state.clips.length) {
     toast("当前没有可归档的消息", "error");
     return;
   }
-  if (confirm(`把当前 ${state.clips.length} 条消息归档？时间线会清空，归档里仍可查看。`)) {
-    send({ type: "archive", title: `归档 ${formatTime(Date.now())}` });
-  }
+  const ok = await askConfirm(
+    "归档房间",
+    `把当前 ${state.clips.length} 条消息归档？时间线会清空，归档里仍可查看。`,
+    "归档",
+  );
+  if (ok) send({ type: "archive", title: `归档 ${formatTime(Date.now())}` });
 });
 els.archivesLink?.addEventListener("click", (ev) => {
   ev.preventDefault();
+  openArchiveDrawer();
+});
+els.railArchivesLink?.addEventListener("click", (ev) => {
+  ev.preventDefault();
+  closeRail();
   openArchiveDrawer();
 });
 els.archiveClose?.addEventListener("click", closeArchiveDrawer);
@@ -1045,7 +1206,7 @@ els.archiveDrawer?.addEventListener("click", (ev) => {
   if (ev.target === els.archiveDrawer) closeArchiveDrawer();
 });
 
-els.archiveList?.addEventListener("click", (ev) => {
+els.archiveList?.addEventListener("click", async (ev) => {
   const btn = ev.target.closest("[data-act]");
   if (!btn) return;
   if (btn.dataset.act === "open-archive") {
@@ -1054,9 +1215,9 @@ els.archiveList?.addEventListener("click", (ev) => {
   }
   if (btn.dataset.act === "rename-archive") {
     const current = state.archives.find((item) => item.id === btn.dataset.id);
-    const title = prompt("归档名称", current?.title || "");
-    if (title == null) return;
-    send({ type: "archive.rename", id: btn.dataset.id, title });
+    const title = await askPrompt("重命名归档", "输入新的归档名称。", current?.title || "");
+    if (title == null || !title.trim()) return;
+    send({ type: "archive.rename", id: btn.dataset.id, title: title.trim() });
     return;
   }
   if (btn.dataset.act === "delete-archive") {
@@ -1071,20 +1232,7 @@ els.archiveImportFile?.addEventListener("change", () => {
   els.archiveImportFile.value = "";
 });
 
-els.confirmCancel?.addEventListener("click", closeConfirm);
-els.confirmModal?.addEventListener("click", (ev) => {
-  if (ev.target === els.confirmModal) closeConfirm();
-});
-els.confirmOk?.addEventListener("click", () => {
-  if (!state.pendingDeleteId) return;
-  send({ type: "archive.delete", id: state.pendingDeleteId, code: els.confirmInput?.value.trim() });
-});
-els.confirmInput?.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter") {
-    ev.preventDefault();
-    els.confirmOk?.click();
-  }
-});
+
 
 els.pickFile.addEventListener("click", (ev) => {
   ev.preventDefault();
@@ -1098,21 +1246,23 @@ els.fileInput.addEventListener("change", () => {
   els.fileInput.value = "";
 });
 
+const dropZone = document.querySelector(".composer");
+
 ["dragenter", "dragover"].forEach((type) => {
-  els.composerBox?.addEventListener(type, (ev) => {
+  dropZone?.addEventListener(type, (ev) => {
     ev.preventDefault();
-    els.composerBox.classList.add("drag");
+    dropZone.classList.add("drag");
   });
 });
 
 ["dragleave", "drop"].forEach((type) => {
-  els.composerBox?.addEventListener(type, (ev) => {
+  dropZone?.addEventListener(type, (ev) => {
     ev.preventDefault();
-    els.composerBox.classList.remove("drag");
+    dropZone.classList.remove("drag");
   });
 });
 
-els.composerBox?.addEventListener("drop", (ev) => {
+dropZone?.addEventListener("drop", (ev) => {
   const file = ev.dataTransfer?.files?.[0];
   if (file) queueFile(file);
 });
@@ -1171,6 +1321,11 @@ els.copyOs.addEventListener("click", async () => {
 });
 
 els.timeline.addEventListener("click", async (ev) => {
+  const img = ev.target.closest("img.clip-image");
+  if (img) {
+    openLightbox(img.getAttribute("src"), img.getAttribute("alt"));
+    return;
+  }
   const btn = ev.target.closest("[data-act]");
   if (!btn) return;
   const id = btn.dataset.id;
@@ -1178,6 +1333,8 @@ els.timeline.addEventListener("click", async (ev) => {
     (id ? state.clips.find((c) => c.id === id) : null) ||
     (id ? state.openArchive?.clips?.find((c) => c.id === id) : null);
   if (btn.dataset.act === "delete") {
+    const ok = await askConfirm("删除消息", "确定删除这条消息？删除后无法恢复。", "删除");
+    if (!ok) return;
     send({ type: "delete", id });
     return;
   }
@@ -1217,7 +1374,20 @@ els.timeline.addEventListener("click", async (ev) => {
   }
 });
 
+els.lightboxClose?.addEventListener("click", closeLightbox);
+els.lightbox?.addEventListener("click", (ev) => {
+  if (ev.target === els.lightbox) closeLightbox();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && els.lightbox && !els.lightbox.hidden) closeLightbox();
+});
+
 els.archiveView?.addEventListener("click", async (ev) => {
+  const img = ev.target.closest("img.clip-image");
+  if (img) {
+    openLightbox(img.getAttribute("src"), img.getAttribute("alt"));
+    return;
+  }
   const btn = ev.target.closest("[data-act='copy'], [data-act='copy-code']");
   if (!btn) return;
   if (btn.dataset.act === "copy-code") {
@@ -1258,8 +1428,9 @@ fetch("/api/info")
 fetch("/api/session")
   .then((r) => r.json())
   .then((data) => {
-    const btn = document.getElementById("logout");
-    if (btn && data.auth) {
+    if (!data.auth) return;
+    for (const btn of [document.getElementById("logout"), els.railLogout]) {
+      if (!btn) continue;
       btn.hidden = false;
       btn.addEventListener("click", async () => {
         await fetch("/api/logout", { method: "POST" });
@@ -1269,4 +1440,5 @@ fetch("/api/session")
   })
   .catch(() => {});
 
+setInterval(refreshAges, 30000);
 connect();

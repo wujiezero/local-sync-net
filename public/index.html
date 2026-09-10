@@ -15,11 +15,17 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/styles.css?v=fold1" />
+    <link rel="stylesheet" href="/styles.css?v=m3" />
   </head>
   <body>
     <div class="app">
       <header class="topbar">
+        <button id="rail-toggle" class="icon-btn rail-toggle" type="button" aria-label="打开菜单" data-toast="off">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+        </button>
+
         <div class="brand">
           <span class="brand-mark" aria-hidden="true">
             <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
@@ -49,7 +55,17 @@
         </div>
       </header>
 
-      <aside class="rail">
+      <div id="rail-scrim" class="rail-scrim" hidden></div>
+
+      <aside id="rail" class="rail">
+        <div class="rail-head">
+          <h2>设置</h2>
+          <button id="rail-close" class="icon-btn" type="button" aria-label="关闭菜单" data-toast="off">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
         <section class="panel">
           <div class="panel-head">
             <h2>房间</h2>
@@ -74,6 +90,19 @@
           <ul id="peers" class="peer-list"></ul>
         </section>
 
+        <section class="panel rail-nav-panel">
+          <div class="panel-head">
+            <h2>导航</h2>
+          </div>
+          <nav class="nav">
+            <a href="/" aria-current="page">时间线</a>
+            <a id="rail-archives-link" href="#archives">归档</a>
+            <a id="rail-settings-link" href="/settings">标签配置</a>
+            <a href="/admin">房间管理</a>
+          </nav>
+          <button id="rail-logout" class="btn btn-ghost" type="button" hidden>退出登录</button>
+        </section>
+
         <section class="panel panel-quiet">
           <p class="howto">
             文本和附件在同一个发送框。归档会收起当前时间线，历史仍可查看；删除归档需验证码。
@@ -83,60 +112,17 @@
       </aside>
 
       <main class="stage">
-        <section class="composer panel">
-          <div class="panel-head">
-            <h2>发送到网格</h2>
-            <span id="limit-hint" class="hint">附件上限 32 MB</span>
-          </div>
-
-          <div id="reply-bar" class="reply-bar" hidden>
-            <div class="reply-bar-copy">
-              <span class="hint"><span id="compose-mode">回复</span> <b id="reply-name"></b></span>
-              <p id="reply-preview" class="reply-preview"></p>
-            </div>
-            <button id="reply-cancel" class="btn btn-ghost btn-mini" type="button">取消</button>
-          </div>
-
-          <div id="composer-box" class="composer-box">
-            <input id="file-input" type="file" hidden />
-            <textarea
-              id="draft"
-              placeholder="输入或粘贴文本，也可把图片 / 附件拖进来… Ctrl/⌘ + Enter 发送"
-              maxlength="200000"
-            ></textarea>
-            <div id="attach-preview" class="attach-preview" hidden></div>
-            <div class="composer-bar">
-              <div class="composer-actions">
-                <button id="pick-file" class="btn btn-ghost" type="button">附件</button>
-                <button id="copy-os" class="btn btn-ghost" type="button">剪贴板</button>
-                <button id="send" class="btn btn-primary" type="button">发送</button>
-              </div>
-              <span class="composer-meta">
-                <span id="format-hint" class="hint">文本</span>
-                <span id="draft-count" class="hint mono">0</span>
-              </span>
-            </div>
-          </div>
-
-          <div class="tag-picker">
-            <div class="panel-head" style="margin-bottom:8px">
-              <span class="hint">选用标签</span>
-              <a class="hint" href="/settings">去配置</a>
-            </div>
-            <div id="draft-tags" class="chip-row"></div>
-          </div>
-        </section>
-
         <section class="timeline-wrap">
           <div class="panel-head timeline-head">
             <h2>同步时间线</h2>
             <div class="timeline-tools">
               <span id="filter-count" class="hint"></span>
-              <button id="reset-filters" class="btn btn-ghost btn-mini" type="button">重置筛选</button>
-              <button id="archive-room" class="btn btn-ghost" type="button">归档房间</button>
+              <button id="filter-toggle" class="btn btn-ghost btn-mini" type="button" data-toast="off">筛选</button>
+              <button id="reset-filters" class="btn btn-ghost btn-mini" type="button">重置</button>
+              <button id="archive-room" class="btn btn-ghost btn-mini" type="button">归档</button>
             </div>
           </div>
-          <div class="filters">
+          <div id="filters" class="filters">
             <div id="tag-filters" class="chip-row"></div>
             <div class="time-filters">
               <label class="field time-field">
@@ -150,6 +136,57 @@
             </div>
           </div>
           <div id="timeline" class="timeline"></div>
+        </section>
+
+        <section class="composer">
+          <div id="reply-bar" class="reply-bar" hidden>
+            <span class="reply-bar-bar" aria-hidden="true"></span>
+            <div class="reply-bar-copy">
+              <span class="hint"><span id="compose-mode">回复</span> <b id="reply-name"></b></span>
+              <p id="reply-preview" class="reply-preview"></p>
+            </div>
+            <button id="reply-cancel" class="icon-btn" type="button" aria-label="取消" data-toast="off">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          <div id="attach-preview" class="attach-preview" hidden></div>
+
+          <div id="draft-tags" class="chip-row draft-tags"></div>
+
+          <div id="composer-box" class="composer-box">
+            <input id="file-input" type="file" hidden />
+            <button id="pick-file" class="icon-btn composer-icon" type="button" aria-label="添加附件" data-toast="off">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+            </button>
+            <textarea
+              id="draft"
+              rows="1"
+              placeholder="输入消息… Ctrl/⌘ + Enter 发送"
+              maxlength="200000"
+            ></textarea>
+            <button id="copy-os" class="icon-btn composer-icon" type="button" aria-label="读系统剪贴板" data-toast="off">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="8" y="4" width="12" height="16" rx="2" stroke="currentColor" stroke-width="1.6" />
+                <path d="M16 4H6a2 2 0 0 0-2 2v12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </button>
+            <button id="send" class="icon-btn composer-send" type="button" aria-label="发送" data-toast="off">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 12l16-8-6 8 6 8-16-8z" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="composer-meta">
+            <span id="format-hint" class="hint">文本</span>
+            <span id="limit-hint" class="hint">附件上限 32 MB</span>
+            <span id="draft-count" class="hint mono">0</span>
+          </div>
         </section>
       </main>
     </div>
@@ -185,17 +222,22 @@
 
     <div id="confirm-modal" class="modal" hidden>
       <div class="modal-card">
-        <h2>删除归档</h2>
-        <p class="howto">删除后无法恢复。请输入验证码确认：<b id="confirm-code" class="mono"></b></p>
-        <input id="confirm-input" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="6 位验证码" />
+        <h2 id="dialog-title">确认</h2>
+        <p id="dialog-body" class="howto"></p>
+        <input id="dialog-input" type="text" autocomplete="off" hidden />
         <div class="composer-actions" style="margin-top:12px">
-          <button id="confirm-cancel" class="btn btn-ghost" type="button">取消</button>
-          <button id="confirm-ok" class="btn btn-primary" type="button">确认删除</button>
+          <button id="dialog-cancel" class="btn btn-ghost" type="button">取消</button>
+          <button id="dialog-ok" class="btn btn-primary" type="button">确定</button>
         </div>
       </div>
     </div>
 
+    <div id="lightbox" class="lightbox" hidden>
+      <button id="lightbox-close" class="btn btn-ghost lightbox-close" type="button">关闭</button>
+      <img id="lightbox-image" alt="" />
+    </div>
+
     <div id="toast" class="toast" hidden></div>
-    <script src="/app.js?v=replyfix1" type="module"></script>
+    <script src="/app.js?v=m3" type="module"></script>
   </body>
 </html>

@@ -208,6 +208,10 @@ const PUBLIC_PATHS = new Set([
   "/login.js",
   "/toast.js",
   "/toast.js?v=toast2",
+  "/toast.js?v=m1",
+  "/toast.js?v=m2",
+  "/toast.js?v=m3",
+  "/dialog.js",
   "/favicon.svg",
   "/manifest.webmanifest",
 ]);
