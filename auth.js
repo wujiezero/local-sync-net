@@ -1,8 +1,13 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 
 const AUTH_USERNAME = String(process.env.AUTH_USERNAME || "").trim();
 const AUTH_PASSWORD = String(process.env.AUTH_PASSWORD || "");
-const SESSION_TTL_MS = Number(process.env.SESSION_TTL_HOURS || 168) * 3600 * 1000;
+const SESSION_TTL_MS = Number(process.env.SESSION_TTL_HOURS || 12) * 3600 * 1000;
+const REMEMBER_TTL_MS = Number(process.env.REMEMBER_TTL_DAYS || 30) * 86400 * 1000;
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+const SESSION_PATH = path.join(DATA_DIR, "sessions.json");
 const COOKIE_NAME = "clipmesh_session";
 const TRUST_PROXY = String(process.env.TRUST_PROXY || "").toLowerCase() === "true";
 const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || "")
@@ -13,6 +18,36 @@ const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || "")
 const sessions = new Map();
 const loginHits = new Map();
 const uploadHits = new Map();
+
+function loadSessions() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SESSION_PATH, "utf8"));
+    const now = Date.now();
+    for (const [token, session] of Object.entries(parsed?.sessions || {})) {
+      if (session?.expiresAt > now && token) sessions.set(token, session);
+    }
+  } catch (err) {
+    if (err && err.code !== "ENOENT") console.error("failed to load sessions", err);
+  }
+}
+
+export function persistSessions() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const snapshot = { sessions: {} };
+    const now = Date.now();
+    for (const [token, session] of sessions) {
+      if (session.expiresAt > now) snapshot.sessions[token] = session;
+    }
+    const tmp = `${SESSION_PATH}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(snapshot));
+    fs.renameSync(tmp, SESSION_PATH);
+  } catch (err) {
+    console.error("failed to persist sessions", err);
+  }
+}
+
+loadSessions();
 
 export const authEnabled = Boolean(AUTH_USERNAME && AUTH_PASSWORD);
 
@@ -56,21 +91,24 @@ export function getSession(req) {
   const session = sessions.get(token);
   if (!session || session.expiresAt < Date.now()) {
     sessions.delete(token);
+    persistSessions();
     return null;
   }
   return session;
 }
 
-export function createSession(req, res) {
+export function createSession(req, res, remember = false) {
   const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = Date.now() + SESSION_TTL_MS;
-  sessions.set(token, { expiresAt, ip: clientIp(req), user: AUTH_USERNAME });
+  const ttl = remember ? REMEMBER_TTL_MS : SESSION_TTL_MS;
+  const expiresAt = Date.now() + ttl;
+  sessions.set(token, { expiresAt, ip: clientIp(req), user: AUTH_USERNAME, remember: Boolean(remember) });
+  persistSessions();
   const parts = [
     `${COOKIE_NAME}=${token}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
-    `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+    `Max-Age=${Math.floor(ttl / 1000)}`,
   ];
   if (isHttps(req) || String(process.env.AUTH_COOKIE_SECURE || "").toLowerCase() === "true") {
     parts.push("Secure");
@@ -82,6 +120,7 @@ export function createSession(req, res) {
 export function destroySession(req, res) {
   const token = parseCookies(req.headers.cookie)[COOKIE_NAME];
   if (token) sessions.delete(token);
+  persistSessions();
   res.setHeader("Set-Cookie", `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
@@ -168,6 +207,7 @@ const PUBLIC_PATHS = new Set([
   "/styles.css",
   "/login.js",
   "/toast.js",
+  "/toast.js?v=toast2",
   "/favicon.svg",
   "/manifest.webmanifest",
 ]);

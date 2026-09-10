@@ -15,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=fold1" />
   </head>
   <body>
     <div class="app">
@@ -169,6 +169,20 @@
       </div>
     </div>
 
+    <div id="reply-modal" class="modal" hidden>
+      <div class="modal-card reply-modal-card">
+        <div class="panel-head">
+          <h2>回复 <span id="inline-reply-name"></span></h2>
+          <button id="inline-reply-cancel" class="btn btn-ghost btn-mini" type="button">关闭</button>
+        </div>
+        <p id="inline-reply-preview" class="reply-preview"></p>
+        <textarea id="inline-reply-draft" maxlength="200000" placeholder="输入回复… Ctrl/⌘ + Enter 发送"></textarea>
+        <div class="composer-actions" style="margin-top:12px">
+          <button id="inline-reply-send" class="btn btn-primary" type="button">发送回复</button>
+        </div>
+      </div>
+    </div>
+
     <div id="confirm-modal" class="modal" hidden>
       <div class="modal-card">
         <h2>删除归档</h2>
@@ -182,6 +196,6 @@
     </div>
 
     <div id="toast" class="toast" hidden></div>
-    <script src="/app.js" type="module"></script>
+    <script src="/app.js?v=replyfix1" type="module"></script>
   </body>
 </html>

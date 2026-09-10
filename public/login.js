@@ -1,4 +1,4 @@
-import { toast } from "./toast.js";
+import { toast } from "./toast.js?v=remember1";
 
 const params = new URLSearchParams(location.search);
 const next = params.get("next") || "/";
@@ -14,6 +14,7 @@ form.addEventListener("submit", async (ev) => {
     body: JSON.stringify({
       username: document.getElementById("username").value,
       password: document.getElementById("password").value,
+      remember: document.getElementById("remember")?.checked !== false,
     }),
   });
   const data = await res.json().catch(() => ({}));

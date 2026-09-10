@@ -1,4 +1,4 @@
-import { toast } from "./toast.js";
+import { toast } from "./toast.js?v=fold1";
 import { marked } from "./vendor/marked.esm.js";
 import DOMPurify from "./vendor/purify.es.mjs";
 import hljs from "./vendor/hljs-languages.js";
@@ -43,6 +43,12 @@ const els = {
   replyPreview: $("reply-preview"),
   replyCancel: $("reply-cancel"),
   composeMode: $("compose-mode"),
+  replyModal: $("reply-modal"),
+  inlineReplyName: $("inline-reply-name"),
+  inlineReplyPreview: $("inline-reply-preview"),
+  inlineReplyDraft: $("inline-reply-draft"),
+  inlineReplySend: $("inline-reply-send"),
+  inlineReplyCancel: $("inline-reply-cancel"),
   draftTags: $("draft-tags"),
   tagFilters: $("tag-filters"),
   fromTime: $("from-time"),
@@ -376,8 +382,43 @@ function setReply(clip) {
   if (!clip) return;
   state.editingId = null;
   state.replyTo = clip;
+  if (els.replyModal) {
+    els.replyModal.hidden = false;
+    if (els.inlineReplyName) els.inlineReplyName.textContent = `${formatSeq(clip.seq)} · ${clip.deviceName || ""}`;
+    if (els.inlineReplyPreview) els.inlineReplyPreview.textContent = previewOf(clip);
+    if (els.inlineReplyDraft) {
+      els.inlineReplyDraft.value = "";
+      els.inlineReplyDraft.focus();
+    }
+    return;
+  }
   updateReplyBar();
   els.draft.focus();
+}
+
+function closeReplyModal() {
+  if (els.replyModal) els.replyModal.hidden = true;
+  if (els.inlineReplyDraft) els.inlineReplyDraft.value = "";
+  if (!state.editingId) state.replyTo = null;
+  updateReplyBar();
+}
+
+function sendInlineReply() {
+  const text = els.inlineReplyDraft?.value || "";
+  if (!text.trim() || !state.replyTo?.id) return;
+  const payload = { type: "text", text, replyTo: state.replyTo.id };
+  if (state.draftTags.length) payload.tags = state.draftTags;
+  if (send({ type: "push", payload })) {
+    const sent = text.trim();
+    const top = (els.draft?.value || "").trim();
+    if (top && (top === sent || top.endsWith(sent))) {
+      els.draft.value = top === sent ? "" : top.slice(0, top.length - sent.length).replace(/\n+$/, "");
+      els.draftCount.textContent = String(els.draft.value.length);
+      updateFormatHint();
+    }
+    closeReplyModal();
+    toast("已发送回复");
+  }
 }
 
 function clearReply() {
@@ -393,6 +434,12 @@ function updateReplyBar() {
     els.replyName.textContent = formatSeq(editing.seq);
     els.replyPreview.textContent = previewOf(editing);
     els.send.textContent = "保存修改";
+    return;
+  }
+  if (els.replyModal && !els.replyModal.hidden) {
+    els.replyBar.hidden = true;
+    if (els.composeMode) els.composeMode.textContent = "回复";
+    els.send.textContent = "发送";
     return;
   }
   const target = state.replyTo;
@@ -429,7 +476,23 @@ function beginEdit(clip) {
 function cancelComposeMode() {
   state.editingId = null;
   state.replyTo = null;
+  if (els.replyModal) els.replyModal.hidden = true;
   updateReplyBar();
+}
+
+function shouldFold(clip) {
+  const text = String(clip?.text || "");
+  if (text.length > 280) return true;
+  if (text.split(/\n/).length > 8) return true;
+  return false;
+}
+
+function wrapFold(html, clip) {
+  if (!shouldFold(clip)) return `<div class="clip-body">${html}</div>`;
+  return `<div class="clip-body is-folded">
+    <div class="fold-content">${html}</div>
+    <button type="button" class="btn btn-ghost btn-mini fold-toggle" data-act="toggle-fold" data-toast="off">展开详情</button>
+  </div>`;
 }
 
 function threadTree(clips) {
@@ -475,11 +538,11 @@ function renderClip(clip, { isReply = false, readOnly = false } = {}) {
   let body = "";
   if (clip.type === "image" && clip.file) {
     body = `<img class="clip-image" src="${clip.file.url}" alt="${escapeHtml(clip.file.name)}" />`;
-    if (clip.text) body += `<div style="margin-top:10px">${renderRichText(clip.text, clip.id)}</div>`;
+    if (clip.text) body += `<div style="margin-top:10px">${wrapFold(renderRichText(clip.text, clip.id), clip)}</div>`;
   } else if (clip.type === "file" && clip.file) {
     body = `<div class="clip-file"><div><a href="${clip.file.url}" download="${escapeHtml(clip.file.name)}">${escapeHtml(clip.file.name)}</a><div class="hint">${formatBytes(clip.file.size)} · ${escapeHtml(clip.file.mime)}</div></div></div>`;
   } else {
-    body = renderRichText(clip.text || "", clip.id);
+    body = wrapFold(renderRichText(clip.text || "", clip.id), clip);
   }
 
   const extra = clip.type === "text" && clip.text ? formatBadge(clip.text) : `<span class="kind ${clip.type}">${kindLabel(clip.type)}</span>`;
@@ -897,7 +960,8 @@ async function sendComposer() {
   }
   if (!text.trim()) return;
   const payload = { type: "text", text };
-  if (state.replyTo?.id) payload.replyTo = state.replyTo.id;
+  const modalOpen = els.replyModal && !els.replyModal.hidden;
+  if (state.replyTo?.id && !modalOpen) payload.replyTo = state.replyTo.id;
   if (state.draftTags.length) payload.tags = state.draftTags;
   if (send({ type: "push", payload })) {
     resetComposer();
@@ -926,6 +990,18 @@ els.draft.addEventListener("keydown", (ev) => {
 els.send.addEventListener("click", sendComposer);
 els.join.addEventListener("click", connect);
 els.replyCancel?.addEventListener("click", clearReply);
+els.inlineReplyCancel?.addEventListener("click", closeReplyModal);
+els.inlineReplySend?.addEventListener("click", sendInlineReply);
+els.replyModal?.addEventListener("click", (ev) => {
+  if (ev.target === els.replyModal) closeReplyModal();
+});
+els.inlineReplyDraft?.addEventListener("keydown", (ev) => {
+  if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
+    ev.preventDefault();
+    sendInlineReply();
+  }
+  if (ev.key === "Escape") closeReplyModal();
+});
 
 els.draftTags?.addEventListener("click", (ev) => {
   const btn = ev.target.closest("[data-act='draft-tag']");
@@ -1042,16 +1118,23 @@ els.composerBox?.addEventListener("drop", (ev) => {
 });
 
 document.addEventListener("paste", (ev) => {
+  const target = ev.target;
+  const typing =
+    target &&
+    (target.matches?.("input, textarea, [contenteditable='true']") ||
+      target.closest?.("input, textarea, [contenteditable='true']"));
   const items = [...(ev.clipboardData?.items || [])];
   const fileItem = items.find((item) => item.kind === "file");
   if (fileItem) {
+    if (typing) return;
     const file = fileItem.getAsFile();
     if (file) queueFile(file);
     return;
   }
-  if (document.activeElement !== els.draft) {
-    const text = ev.clipboardData?.getData("text");
-    if (text) els.draft.value = (els.draft.value ? `${els.draft.value}\n` : "") + text;
+  if (typing) return;
+  const text = ev.clipboardData?.getData("text");
+  if (text) {
+    els.draft.value = (els.draft.value ? `${els.draft.value}\n` : "") + text;
     els.draftCount.textContent = String(els.draft.value.length);
     updateFormatHint();
   }
@@ -1100,6 +1183,14 @@ els.timeline.addEventListener("click", async (ev) => {
   }
   if (btn.dataset.act === "reply") {
     if (clip) setReply(clip);
+    return;
+  }
+  if (btn.dataset.act === "toggle-fold") {
+    const box = btn.closest(".clip-body");
+    if (!box) return;
+    const open = box.classList.toggle("is-open");
+    box.classList.toggle("is-folded", !open);
+    btn.textContent = open ? "收起" : "展开详情";
     return;
   }
   if (btn.dataset.act === "edit") {

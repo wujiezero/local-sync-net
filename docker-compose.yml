@@ -17,7 +17,8 @@ services:
       AUTH_PASSWORD: "${AUTH_PASSWORD:-}"
       TRUST_PROXY: "${TRUST_PROXY:-true}"
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
-      SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-168}"
+      SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-12}"
+      REMEMBER_TTL_DAYS: "${REMEMBER_TTL_DAYS:-30}"
     volumes:
       - clipmesh-data:/data
     healthcheck:

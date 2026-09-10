@@ -17,6 +17,7 @@ import {
   clientIp,
   createSession,
   destroySession,
+  persistSessions,
   requireAuth,
   securityHeaders,
   verifyCredentials,
@@ -559,7 +560,7 @@ app.post("/api/login", (req, res) => {
   if (!verifyCredentials(req.body?.username, req.body?.password)) {
     return res.status(401).json({ error: "用户名或密码不正确" });
   }
-  createSession(req, res);
+  createSession(req, res, Boolean(req.body?.remember));
   res.json({ ok: true });
 });
 
@@ -709,7 +710,7 @@ app.use("/files", (req, res, next) => {
   if (!inline.has(ext)) res.setHeader("Content-Disposition", "attachment");
   next();
 }, express.static(FILES_DIR, { fallthrough: false, maxAge: "1h", index: false }));
-app.use(express.static(path.join(__dirname, "public"), { index: "index.html", maxAge: "10m" }));
+app.use(express.static(path.join(__dirname, "public"), { index: "index.html", maxAge: 0, etag: false }));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({
@@ -1065,6 +1066,7 @@ const heartbeat = setInterval(() => {
 async function shutdown() {
   clearInterval(heartbeat);
   clearTimeout(persistTimer);
+  persistSessions();
   try {
     await persist();
   } catch (err) {

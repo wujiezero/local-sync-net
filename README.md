@@ -58,7 +58,8 @@ docker compose up -d --build
 | `AUTH_PASSWORD` | 空 | 登录密码 |
 | `TRUST_PROXY` | `true` | 信任 `X-Forwarded-*` / `CF-Connecting-IP` |
 | `ALLOWED_ORIGINS` | 空 | 允许的 Origin，逗号分隔；公网建议填隧道域名 |
-| `SESSION_TTL_HOURS` | `168` | 登录会话有效期（小时） |
+| `SESSION_TTL_HOURS` | `12` | 未勾选「记住登录」时的会话时长 |
+| `REMEMBER_TTL_DAYS` | `30` | 勾选「记住登录」后的有效天数 |
 
 数据卷：`clipmesh-data` → `/data`（消息、附件、归档、标签目录）。
 

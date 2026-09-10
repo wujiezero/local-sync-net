@@ -1,4 +1,4 @@
-import { toast } from "./toast.js";
+import { toast } from "./toast.js?v=toast2";
 
 const $ = (id) => document.getElementById(id);
 
