@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#010102" />
     <meta name="color-scheme" content="dark" />
-    <title>ClipMesh · 标签配置</title>
+    <title>ClipMesh · 房间管理</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -28,17 +28,16 @@
           </span>
           <div class="brand-copy">
             <h1>ClipMesh</h1>
-            <p>标签配置</p>
+            <p>房间管理</p>
           </div>
         </div>
         <div class="topbar-meta">
           <nav class="nav">
             <a href="/">时间线</a>
             <a href="/#archives">归档</a>
-            <a href="/settings" aria-current="page">标签配置</a>
-            <a href="/admin">房间管理</a>
+            <a href="/settings">标签配置</a>
+            <a href="/admin" aria-current="page">房间管理</a>
           </nav>
-          <span id="status" class="status" data-state="connecting"><i></i><span>连接中</span></span>
           <button id="logout" class="btn btn-ghost btn-mini" type="button" hidden>退出</button>
         </div>
       </header>
@@ -46,48 +45,38 @@
       <aside class="rail">
         <section class="panel">
           <div class="panel-head">
-            <h2>房间</h2>
-            <span class="hint">标签按房间隔离</span>
+            <h2>总览</h2>
+            <span class="hint">磁盘上仍保留的房间</span>
           </div>
-          <label class="field">
-            <span>房间名</span>
-            <input id="room" type="text" maxlength="48" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="field">
-            <span>设备名</span>
-            <input id="device-name" type="text" maxlength="40" autocomplete="off" />
-          </label>
-          <button id="join" class="btn btn-primary" type="button">连接房间</button>
+          <ul class="stat-list">
+            <li><span>全部房间</span><b id="stat-total" class="mono">0</b></li>
+            <li><span>有人在线</span><b id="stat-live" class="mono">0</b></li>
+            <li><span>孤儿房间</span><b id="stat-orphan" class="mono">0</b></li>
+          </ul>
         </section>
         <section class="panel panel-quiet">
           <p class="howto">
-            在这里增删改房间标签。重命名或删除会同步到该房间所有消息，时间线只负责给消息选用标签。
+            孤儿房间：当前没人打开，但时间线或归档还在。人走数据不会丢，可从这里进入或继续归档。
           </p>
+          <button id="refresh" class="btn btn-ghost" type="button">刷新</button>
         </section>
       </aside>
 
       <main class="stage settings-stage">
         <section class="panel">
           <div class="panel-head">
-            <h2>新增标签</h2>
-            <span id="tag-count" class="hint">0 / 40</span>
+            <h2>全部房间</h2>
+            <div class="chip-row">
+              <button id="filter-all" class="chip active" type="button">全部</button>
+              <button id="filter-live" class="chip" type="button">在线</button>
+              <button id="filter-orphan" class="chip" type="button">孤儿</button>
+            </div>
           </div>
-          <div class="custom-tag">
-            <input id="new-tag" type="text" maxlength="16" placeholder="例如：发布、排查、凭证" autocomplete="off" />
-            <button id="add-tag" class="btn btn-primary btn-mini" type="button">添加</button>
-          </div>
-        </section>
-
-        <section class="panel catalog-panel">
-          <div class="panel-head">
-            <h2>房间标签</h2>
-            <span class="hint">最多 40 个，消息最多挂 6 个</span>
-          </div>
-          <div id="catalog" class="catalog-list"></div>
+          <div id="room-list" class="catalog-list"></div>
         </section>
       </main>
     </div>
     <div id="toast" class="toast" hidden></div>
-    <script src="/settings.js" type="module"></script>
+    <script src="/admin.js" type="module"></script>
   </body>
 </html>

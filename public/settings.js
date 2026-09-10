@@ -1,3 +1,5 @@
+import { toast } from "./toast.js";
+
 const $ = (id) => document.getElementById(id);
 
 const els = {
@@ -70,18 +72,11 @@ function setStatus(kind, label) {
   els.status.querySelector("span").textContent = label;
 }
 
-function toast(message) {
-  els.toast.hidden = false;
-  els.toast.textContent = message;
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => {
-    els.toast.hidden = true;
-  }, 2200);
-}
+
 
 function send(payload) {
   if (!state.ws || state.ws.readyState !== 1) {
-    toast("尚未连上房间");
+    toast("尚未连上房间", "error");
     return false;
   }
   state.ws.send(JSON.stringify(payload));
@@ -146,7 +141,7 @@ function connect() {
       state.tags = msg.tags || [];
       renderCatalog();
     } else if (msg.type === "error") {
-      toast(msg.error || "出错了");
+      toast(msg.error || "出错了", "error");
     }
   };
 
@@ -160,7 +155,10 @@ function connect() {
 function addTag() {
   const name = sanitizeTag(els.newTag.value);
   if (!name) return;
-  if (send({ type: "tags.create", name })) els.newTag.value = "";
+  if (send({ type: "tags.create", name })) {
+    els.newTag.value = "";
+    toast("已添加标签");
+  }
 }
 
 els.addTag.addEventListener("click", addTag);
@@ -181,6 +179,7 @@ els.catalog.addEventListener("click", (ev) => {
   if (btn.dataset.act === "delete") {
     if (confirm(`删除标签「${from}」？已用该标签的消息会去掉它。`)) {
       send({ type: "tags.delete", name: from });
+      toast("已删除标签");
     }
     return;
   }
@@ -188,9 +187,23 @@ els.catalog.addEventListener("click", (ev) => {
     const to = sanitizeTag(row.querySelector(".catalog-name")?.value);
     if (!to || to === from) return;
     send({ type: "tags.rename", from, to });
+    toast("已重命名标签");
   }
 });
 
 els.room.value = roomFromUrl();
 els.deviceName.value = localStorage.getItem(NAME_KEY) || defaultName();
+fetch("/api/session")
+  .then((r) => r.json())
+  .then((data) => {
+    const btn = document.getElementById("logout");
+    if (btn && data.auth) {
+      btn.hidden = false;
+      btn.addEventListener("click", async () => {
+        await fetch("/api/logout", { method: "POST" });
+        location.href = "/login";
+      });
+    }
+  })
+  .catch(() => {});
 connect();

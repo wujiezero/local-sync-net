@@ -10,7 +10,7 @@ ENV NODE_ENV=production \
 COPY package.json ./
 RUN npm install --omit=dev
 
-COPY server.js zip.js ./
+COPY server.js zip.js auth.js ./
 COPY public ./public
 
 RUN mkdir -p /data/files && chown -R node:node /app /data

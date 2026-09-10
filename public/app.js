@@ -1,3 +1,4 @@
+import { toast } from "./toast.js";
 import { marked } from "./vendor/marked.esm.js";
 import DOMPurify from "./vendor/purify.es.mjs";
 import hljs from "./vendor/hljs-languages.js";
@@ -123,14 +124,7 @@ function setStatus(kind, label) {
   els.status.querySelector("span").textContent = label;
 }
 
-function toast(message) {
-  els.toast.hidden = false;
-  els.toast.textContent = message;
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => {
-    els.toast.hidden = true;
-  }, 2200);
-}
+
 
 async function copyText(text) {
   const value = String(text ?? "");
@@ -152,7 +146,7 @@ async function copyText(text) {
     document.execCommand("copy");
     toast("已复制");
   } catch {
-    toast("复制失败");
+    toast("复制失败", "error");
   }
   ta.remove();
 }
@@ -199,7 +193,7 @@ function toggleList(list, value) {
   if (!tag) return list;
   if (list.includes(tag)) return list.filter((item) => item !== tag);
   if (list.length >= 6) {
-    toast("最多 6 个标签");
+    toast("最多 6 个标签", "error");
     return list;
   }
   return [...list, tag];
@@ -528,7 +522,7 @@ function renderThread(node, isReply = false, readOnly = false) {
 function flashClip(id) {
   const el = els.timeline.querySelector(`article.clip[data-id="${CSS.escape(id)}"]`);
   if (!el) {
-    toast("原消息不在时间线里");
+    toast("原消息不在时间线里", "error");
     return;
   }
   el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -543,7 +537,7 @@ function renderPeers() {
   els.peers.innerHTML = state.peers
     .map((peer) => {
       const you = peer.you || (state.you && peer.id === state.you.id);
-      return `<li><span>${escapeHtml(peer.deviceName)}</span>${you ? '<span class="you">YOU</span>' : ""}</li>`;
+      return `<li><span class="peer-name">${escapeHtml(peer.deviceName)}</span>${you ? '<span class="you">YOU</span>' : ""}</li>`;
     })
     .join("");
 }
@@ -612,15 +606,16 @@ function renderAttachPreview() {
 function queueFile(file) {
   if (!file) return;
   if (file.size > state.maxFileMb * 1024 * 1024) {
-    toast(`超过 ${state.maxFileMb} MB 上限`);
+    toast(`超过 ${state.maxFileMb} MB 上限`, "error");
     return;
   }
   if (state.editingId) {
-    toast("编辑模式只改文本和标签，请先保存或取消");
+    toast("编辑模式只改文本和标签，请先保存或取消", "error");
     return;
   }
   state.pendingFile = file;
   renderAttachPreview();
+  toast(`已添加附件 ${file.name}`);
 }
 
 function renderArchives() {
@@ -666,7 +661,7 @@ async function importArchiveZip(file) {
   const res = await fetch(`/api/archives/import?room=${room}&deviceName=${device}`, { method: "POST", body });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    toast(data.error || "导入失败");
+    toast(data.error || "导入失败", "error");
     return;
   }
   if (Array.isArray(data.archives)) state.archives = data.archives;
@@ -726,7 +721,7 @@ function renderTimeline() {
 
 function send(payload) {
   if (!state.ws || state.ws.readyState !== 1) {
-    toast("尚未连上房间");
+    toast("尚未连上房间", "error");
     return false;
   }
   state.ws.send(JSON.stringify(payload));
@@ -840,7 +835,7 @@ function connect() {
       renderArchives();
       toast("归档已删除");
     } else if (msg.type === "error") {
-      toast(msg.error || "出错了");
+      toast(msg.error || "出错了", "error");
     }
   };
 
@@ -857,7 +852,7 @@ async function uploadAndPush(file, extraText) {
   const res = await fetch("/api/upload", { method: "POST", body });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    toast(data.error || "上传失败");
+    toast(data.error || "上传失败", "error");
     return false;
   }
   const payload = {
@@ -887,18 +882,27 @@ async function sendComposer() {
   if (state.editingId) {
     const clip = currentEdit();
     if (clip?.type === "text" && !text.trim()) return;
-    if (send({ type: "edit", id: state.editingId, text, tags: state.draftTags })) resetComposer();
+    if (send({ type: "edit", id: state.editingId, text, tags: state.draftTags })) {
+      resetComposer();
+      toast("已保存修改");
+    }
     return;
   }
   if (state.pendingFile) {
-    if (await uploadAndPush(state.pendingFile, text)) resetComposer();
+    if (await uploadAndPush(state.pendingFile, text)) {
+      resetComposer();
+      toast("已发送附件");
+    }
     return;
   }
   if (!text.trim()) return;
   const payload = { type: "text", text };
   if (state.replyTo?.id) payload.replyTo = state.replyTo.id;
   if (state.draftTags.length) payload.tags = state.draftTags;
-  if (send({ type: "push", payload })) resetComposer();
+  if (send({ type: "push", payload })) {
+    resetComposer();
+    toast(payload.replyTo ? "已发送回复" : "已发送");
+  }
 }
 
 function updateFormatHint() {
@@ -949,7 +953,7 @@ els.resetFilters?.addEventListener("click", () => {
 
 els.archiveRoom?.addEventListener("click", () => {
   if (!state.clips.length) {
-    toast("当前没有可归档的消息");
+    toast("当前没有可归档的消息", "error");
     return;
   }
   if (confirm(`把当前 ${state.clips.length} 条消息归档？时间线会清空，归档里仍可查看。`)) {
@@ -1079,7 +1083,7 @@ els.copyOs.addEventListener("click", async () => {
     els.draftCount.textContent = String(els.draft.value.length);
     updateFormatHint();
   } catch {
-    toast("浏览器拒绝读取系统剪贴板，直接粘贴即可");
+    toast("浏览器拒绝读取系统剪贴板，直接粘贴即可", "error");
   }
 });
 
@@ -1156,6 +1160,20 @@ fetch("/api/info")
     if (lan && hints.length) {
       lan.hidden = false;
       lan.textContent = `局域网 ${hints[0]}`;
+    }
+  })
+  .catch(() => {});
+
+fetch("/api/session")
+  .then((r) => r.json())
+  .then((data) => {
+    const btn = document.getElementById("logout");
+    if (btn && data.auth) {
+      btn.hidden = false;
+      btn.addEventListener("click", async () => {
+        await fetch("/api/logout", { method: "POST" });
+        location.href = "/login";
+      });
     }
   })
   .catch(() => {});

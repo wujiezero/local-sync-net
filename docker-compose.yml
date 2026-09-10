@@ -13,6 +13,11 @@ services:
       DATA_DIR: /data
       MAX_FILE_MB: "32"
       MAX_CLIPS: "200"
+      AUTH_USERNAME: "${AUTH_USERNAME:-}"
+      AUTH_PASSWORD: "${AUTH_PASSWORD:-}"
+      TRUST_PROXY: "${TRUST_PROXY:-true}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
+      SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-168}"
     volumes:
       - clipmesh-data:/data
     healthcheck:

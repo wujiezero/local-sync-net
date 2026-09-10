@@ -10,6 +10,18 @@ import express from "express";
 import multer from "multer";
 import { WebSocketServer } from "ws";
 import { createZip, readZip } from "./zip.js";
+import {
+  allowLogin,
+  allowUpload,
+  authEnabled,
+  clientIp,
+  createSession,
+  destroySession,
+  requireAuth,
+  securityHeaders,
+  verifyCredentials,
+  wsAuthorized,
+} from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -479,6 +491,42 @@ function broadcast(room, payload, except) {
   }
 }
 
+function lastActivity(room) {
+  let ts = 0;
+  for (const clip of room.clips || []) {
+    ts = Math.max(ts, Number(clip.editedAt) || 0, Number(clip.createdAt) || 0);
+  }
+  for (const archive of room.archives || []) {
+    ts = Math.max(ts, Number(archive.createdAt) || 0);
+    for (const clip of archive.clips || []) {
+      ts = Math.max(ts, Number(clip.editedAt) || 0, Number(clip.createdAt) || 0);
+    }
+  }
+  return ts || null;
+}
+
+function roomOverview(name, room) {
+  const peers = [...(room.peers?.values?.() || [])].map((peer) => peer.deviceName);
+  const archives = room.archives || [];
+  const liveFiles = (room.clips || []).filter((clip) => clip.file?.url).length;
+  const archiveFiles = archives.reduce(
+    (n, item) => n + (item.clips || []).filter((clip) => clip.file?.url).length,
+    0,
+  );
+  const orphan = peers.length === 0 && ((room.clips || []).length > 0 || archives.length > 0);
+  return {
+    name,
+    peers: peers.length,
+    peerNames: peers,
+    clips: (room.clips || []).length,
+    archives: archives.length,
+    files: liveFiles + archiveFiles,
+    tags: (room.tags || []).length,
+    lastActivity: lastActivity(room),
+    orphan,
+  };
+}
+
 function lanHints() {
   const nets = os.networkInterfaces();
   const urls = [];
@@ -495,8 +543,36 @@ await loadState();
 
 const app = express();
 app.disable("x-powered-by");
+if (String(process.env.TRUST_PROXY || "").toLowerCase() === "true") app.set("trust proxy", 1);
 express.static.mime.define({ "application/javascript": ["js", "mjs"] });
+app.use(securityHeaders);
 app.use(express.json({ limit: "32kb" }));
+
+app.get("/login", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "login.html"));
+});
+
+app.post("/api/login", (req, res) => {
+  if (!authEnabled) return res.json({ ok: true, auth: false });
+  const ip = clientIp(req);
+  if (!allowLogin(ip)) return res.status(429).json({ error: "尝试过多，请稍后再试" });
+  if (!verifyCredentials(req.body?.username, req.body?.password)) {
+    return res.status(401).json({ error: "用户名或密码不正确" });
+  }
+  createSession(req, res);
+  res.json({ ok: true });
+});
+
+app.post("/api/logout", (req, res) => {
+  destroySession(req, res);
+  res.json({ ok: true });
+});
+
+app.get("/api/session", (req, res) => {
+  res.json({ auth: authEnabled });
+});
+
+app.use(requireAuth);
 
 app.get("/api/health", (_req, res) => {
   let clips = 0;
@@ -505,14 +581,18 @@ app.get("/api/health", (_req, res) => {
     clips += room.clips.length;
     peers += room.peers.size;
   }
-  res.json({
-    ok: true,
-    service: "clipmesh",
-    rooms: rooms.size,
-    clips,
-    peers,
-    maxFileMb: MAX_FILE_MB,
-  });
+  res.json(
+    authEnabled
+      ? { ok: true, service: "clipmesh" }
+      : {
+          ok: true,
+          service: "clipmesh",
+          rooms: rooms.size,
+          clips,
+          peers,
+          maxFileMb: MAX_FILE_MB,
+        },
+  );
 });
 
 app.get("/api/info", (_req, res) => {
@@ -521,6 +601,18 @@ app.get("/api/info", (_req, res) => {
     maxFileMb: MAX_FILE_MB,
     maxClips: MAX_CLIPS,
     hints: lanHints(),
+  });
+});
+
+app.get("/api/rooms", (_req, res) => {
+  const list = [...rooms.entries()]
+    .map(([name, room]) => roomOverview(name, room))
+    .sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0) || a.name.localeCompare(b.name));
+  res.json({
+    rooms: list,
+    total: list.length,
+    live: list.filter((item) => item.peers > 0).length,
+    orphan: list.filter((item) => item.orphan).length,
   });
 });
 
@@ -558,6 +650,7 @@ app.get("/api/archives/:id/export", async (req, res) => {
 });
 
 app.post("/api/archives/import", (req, res) => {
+  if (!allowUpload(clientIp(req))) return res.status(429).json({ error: "上传过于频繁" });
   zipUpload.single("file")(req, res, async (err) => {
     if (err) {
       const tooBig = err.code === "LIMIT_FILE_SIZE";
@@ -580,6 +673,7 @@ app.post("/api/archives/import", (req, res) => {
 });
 
 app.post("/api/upload", (req, res) => {
+  if (!allowUpload(clientIp(req))) return res.status(429).json({ error: "上传过于频繁" });
   upload.single("file")(req, res, (err) => {
     if (err) {
       const tooBig = err.code === "LIMIT_FILE_SIZE";
@@ -604,19 +698,32 @@ app.get("/settings", (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "settings.html"));
 });
 
+app.get("/admin", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
 app.use("/files", (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   const ext = path.extname(req.path).toLowerCase();
-  const inline = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif"]);
+  const inline = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif"]);
   if (!inline.has(ext)) res.setHeader("Content-Disposition", "attachment");
   next();
 }, express.static(FILES_DIR, { fallthrough: false, maxAge: "1h", index: false }));
 app.use(express.static(path.join(__dirname, "public"), { index: "index.html", maxAge: "10m" }));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 1024 * 1024 });
+const wss = new WebSocketServer({
+  server,
+  path: "/ws",
+  maxPayload: 1024 * 1024,
+  verifyClient: (info) => wsAuthorized(info.req),
+});
 
 wss.on("connection", (ws, req) => {
+  if (!wsAuthorized(req)) {
+    ws.close(4401, "unauthorized");
+    return;
+  }
   const url = new URL(req.url || "/ws", "http://localhost");
   const { key, room } = getRoom(url.searchParams.get("room"));
   if (room.peers.size >= MAX_PEERS) {
@@ -973,5 +1080,6 @@ process.on("SIGINT", shutdown);
 
 server.listen(PORT, HOST, () => {
   console.log(`ClipMesh listening on http://${HOST}:${PORT}`);
+  console.log(authEnabled ? "  Auth: username/password enabled" : "  Auth: disabled (set AUTH_USERNAME / AUTH_PASSWORD before public exposure)");
   for (const url of lanHints()) console.log(`  LAN: ${url}`);
 });

@@ -39,6 +39,7 @@ docker compose up -d --build
 | --- | --- |
 | `/` | 时间线：发送、回复、编辑、筛选 |
 | `/settings` | 房间标签增删改 |
+| `/admin` | 全部房间 / 孤儿房间总览 |
 | `/#archives` | 查看 / 删除归档 |
 
 ## 配置
@@ -53,6 +54,11 @@ docker compose up -d --build
 | `MAX_CLIPS` | `200` | 每个房间活跃时间线保留条数 |
 | `MAX_ARCHIVES` | `50` | 每个房间归档数量上限 |
 | `MAX_IMPORT_MB` | `256` | 导入 zip 上限 |
+| `AUTH_USERNAME` | 空 | 登录用户名；与密码同时设置才开启鉴权 |
+| `AUTH_PASSWORD` | 空 | 登录密码 |
+| `TRUST_PROXY` | `true` | 信任 `X-Forwarded-*` / `CF-Connecting-IP` |
+| `ALLOWED_ORIGINS` | 空 | 允许的 Origin，逗号分隔；公网建议填隧道域名 |
+| `SESSION_TTL_HOURS` | `168` | 登录会话有效期（小时） |
 
 数据卷：`clipmesh-data` → `/data`（消息、附件、归档、标签目录）。
 
@@ -69,7 +75,24 @@ node server.js
 
 ## 安全说明
 
-这是局域网工具，默认没有账号体系。请不要把端口暴露到公网。删除归档会下发一次性 6 位验证码，两分钟内有效。
+公网（例如 Cloudflare Tunnel）暴露前必须在 `.env` 设置用户名和密码：
+
+```bash
+AUTH_USERNAME=yourname
+AUTH_PASSWORD='换成足够长的密码'
+TRUST_PROXY=true
+ALLOWED_ORIGINS=https://clipmesh.damocles.site
+```
+
+然后 `docker compose up -d`。未同时设置用户名和密码时鉴权关闭，只适合纯局域网。
+
+开启后：
+
+- 浏览器先到 `/login`，账号正确后发 HttpOnly Cookie
+- HTTP / WebSocket / 上传 / 管理页都要带会话
+- 登录与上传有频率限制
+- 响应带 `CSP`、`X-Frame-Options`、`nosniff`；HTTPS 时开 HSTS
+- 删除归档仍要一次性 6 位验证码
 
 ## 技术栈
 
