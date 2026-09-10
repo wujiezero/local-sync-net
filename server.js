@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import multer from "multer";
 import { WebSocketServer } from "ws";
+import { createZip, readZip } from "./zip.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,6 +20,8 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const FILES_DIR = path.join(DATA_DIR, "files");
 const STATE_PATH = path.join(DATA_DIR, "state.json");
 const MAX_ARCHIVES = Number(process.env.MAX_ARCHIVES || 50);
+const MAX_IMPORT_MB = Number(process.env.MAX_IMPORT_MB || 256);
+const MAX_IMPORT_BYTES = MAX_IMPORT_MB * 1024 * 1024;
 const MAX_FILE_MB = Number(process.env.MAX_FILE_MB || 32);
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 const MAX_CLIPS = Number(process.env.MAX_CLIPS || 200);
@@ -263,6 +266,153 @@ function deleteTagInRoom(room, name) {
   return true;
 }
 
+function sanitizeTitle(input) {
+  const cleaned = String(input || "")
+    .replace(/[\u0000-\u001f]/g, "")
+    .trim()
+    .slice(0, 80);
+  return cleaned || "归档";
+}
+
+function zipDownloadName(title) {
+  const base = sanitizeTitle(title)
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 40);
+  return `${base || "archive"}.zip`;
+}
+
+function findArchive(room, id) {
+  return (room.archives || []).find((item) => item.id === String(id || ""));
+}
+
+function collectClipFiles(clips) {
+  const files = [];
+  const seen = new Set();
+  for (const clip of clips || []) {
+    const filename = clip?.file?.url ? path.basename(clip.file.url) : "";
+    if (!filename || seen.has(filename)) continue;
+    seen.add(filename);
+    const disk = path.join(FILES_DIR, filename);
+    if (fs.existsSync(disk)) files.push({ filename, disk, name: clip.file.name || filename });
+  }
+  return files;
+}
+
+function timelineMarkdown(archive) {
+  const lines = [
+    `# ${archive.title}`,
+    "",
+    `- 归档时间：${new Date(archive.createdAt).toISOString()}`,
+    `- 创建者：${archive.createdBy || ""}`,
+    `- 消息数：${(archive.clips || []).length}`,
+    "",
+  ];
+  for (const clip of archive.clips || []) {
+    lines.push(`## #${clip.seq ?? "—"} · ${new Date(clip.createdAt).toISOString()} · ${clip.deviceName || ""}`);
+    if (clip.tags?.length) lines.push(`标签：${clip.tags.join("、")}`);
+    if (clip.quote?.preview) lines.push(`回复：${clip.quote.preview}`);
+    if (clip.text) lines.push("", clip.text);
+    if (clip.file?.url) lines.push("", `附件：[${clip.file.name}](files/${path.basename(clip.file.url)})`);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+async function buildArchiveZip(archive) {
+  const files = [
+    {
+      name: "clipmesh.json",
+      data: JSON.stringify(
+        {
+          format: "clipmesh-archive",
+          version: 1,
+          archive: {
+            title: archive.title,
+            createdAt: archive.createdAt,
+            createdBy: archive.createdBy,
+            clipCount: archive.clipCount ?? archive.clips.length,
+            clips: archive.clips,
+          },
+        },
+        null,
+        2,
+      ),
+    },
+    { name: "timeline.md", data: timelineMarkdown(archive) },
+  ];
+  for (const file of collectClipFiles(archive.clips)) {
+    files.push({ name: `files/${file.filename}`, data: await fsp.readFile(file.disk) });
+  }
+  return createZip(files);
+}
+
+async function importArchiveFromZip(room, zipBuf, createdBy) {
+  const entries = readZip(zipBuf);
+  const raw =
+    entries.get("clipmesh.json") ||
+    entries.get("archive.json") ||
+    [...entries.keys()].filter((name) => name.endsWith(".json")).map((name) => entries.get(name))[0];
+  if (!raw) throw new Error("zip 中缺少 clipmesh.json");
+  const parsed = JSON.parse(raw.toString("utf8"));
+  const source = parsed.archive || parsed;
+  const clipsIn = Array.isArray(source.clips) ? source.clips : [];
+  if (!clipsIn.length) throw new Error("归档里没有消息");
+
+  const idMap = new Map();
+  for (const clip of clipsIn) {
+    if (clip?.id) idMap.set(clip.id, crypto.randomUUID());
+  }
+  const clips = [];
+  for (const clip of clipsIn) {
+    if (!clip || typeof clip !== "object") continue;
+    const next = { ...clip, id: idMap.get(clip.id) || crypto.randomUUID() };
+    if (clip.replyTo && idMap.has(clip.replyTo)) next.replyTo = idMap.get(clip.replyTo);
+    if (clip.threadId && idMap.has(clip.threadId)) next.threadId = idMap.get(clip.threadId);
+    if (clip.quote?.id && idMap.has(clip.quote.id)) {
+      next.quote = { ...clip.quote, id: idMap.get(clip.quote.id) };
+    }
+    if (clip.file?.url) {
+      const oldName = path.basename(clip.file.url);
+      const packed = entries.get(`files/${oldName}`) || entries.get(oldName);
+      if (packed) {
+        const stored = `${crypto.randomUUID()}${extnameSafe(oldName)}`;
+        await fsp.writeFile(path.join(FILES_DIR, stored), packed);
+        next.file = {
+          ...clip.file,
+          id: path.parse(stored).name,
+          url: `/files/${stored}`,
+          name: decodeFilename(clip.file.name || oldName),
+        };
+      } else {
+        delete next.file;
+      }
+    }
+    clips.push(next);
+  }
+  if (!clips.length) throw new Error("没有可导入的消息");
+  const importedTags = [];
+  for (const clip of clips) importedTags.push(...(clip.tags || []));
+  room.tags = sanitizeCatalog([...(room.tags || []), ...importedTags]);
+  for (const clip of clips) clip.tags = sanitizeTags(clip.tags, room.tags);
+
+  if (!room.archives) room.archives = [];
+  const archive = {
+    id: crypto.randomUUID(),
+    title: sanitizeTitle(source.title || "导入归档"),
+    createdAt: Number(source.createdAt) || Date.now(),
+    createdBy: createdBy || String(source.createdBy || "import").slice(0, 40),
+    clipCount: clips.length,
+    clips,
+  };
+  room.archives.push(archive);
+  while (room.archives.length > MAX_ARCHIVES) {
+    const dropped = room.archives.shift();
+    await Promise.all((dropped?.clips || []).map(unlinkClipFile));
+  }
+  return archive;
+}
+
 function archiveSummary(archive) {
   return {
     id: archive.id,
@@ -384,6 +534,49 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: MAX_FILE_BYTES, files: 1 },
+});
+
+const zipUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_IMPORT_BYTES, files: 1 },
+});
+
+app.get("/api/archives/:id/export", async (req, res) => {
+  const { room } = getRoom(req.query.room);
+  const archive = findArchive(room, req.params.id);
+  if (!archive) return res.status(404).json({ error: "归档不存在" });
+  try {
+    const zip = await buildArchiveZip(archive);
+    const filename = zipDownloadName(archive.title);
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.send(zip);
+  } catch (err) {
+    console.error("export failed", err);
+    res.status(500).json({ error: "导出失败" });
+  }
+});
+
+app.post("/api/archives/import", (req, res) => {
+  zipUpload.single("file")(req, res, async (err) => {
+    if (err) {
+      const tooBig = err.code === "LIMIT_FILE_SIZE";
+      return res.status(tooBig ? 413 : 400).json({
+        error: tooBig ? `zip 超过 ${MAX_IMPORT_MB} MB` : err.message || "upload failed",
+      });
+    }
+    if (!req.file) return res.status(400).json({ error: "zip 文件必填" });
+    const { room } = getRoom(req.query.room || req.body?.room);
+    try {
+      const archive = await importArchiveFromZip(room, req.file.buffer, req.query.deviceName || req.body?.deviceName);
+      schedulePersist();
+      const event = { type: "archives", archives: room.archives.map(archiveSummary) };
+      broadcast(room, event);
+      res.json({ ok: true, archive: archiveSummary(archive), archives: event.archives });
+    } catch (error) {
+      res.status(400).json({ error: error.message || "导入失败" });
+    }
+  });
 });
 
 app.post("/api/upload", (req, res) => {
@@ -638,7 +831,7 @@ wss.on("connection", (ws, req) => {
       const snapshot = room.clips.splice(0, room.clips.length);
       const archive = {
         id: crypto.randomUUID(),
-        title: String(msg.title || `归档 ${new Date().toLocaleString("zh-CN")}`).slice(0, 80),
+        title: sanitizeTitle(msg.title || `归档 ${new Date().toLocaleString("zh-CN")}`),
         createdAt: Date.now(),
         createdBy: peer.deviceName,
         clipCount: snapshot.length,
@@ -655,6 +848,20 @@ wss.on("connection", (ws, req) => {
         archive: archiveSummary(archive),
         archives: room.archives.map(archiveSummary),
       };
+      send(ws, event);
+      broadcast(room, event, ws);
+      return;
+    }
+
+    if (msg.type === "archive.rename") {
+      const archive = findArchive(room, msg.id);
+      if (!archive) {
+        send(ws, { type: "error", error: "归档不存在" });
+        return;
+      }
+      archive.title = sanitizeTitle(msg.title);
+      schedulePersist();
+      const event = { type: "archives", archives: room.archives.map(archiveSummary) };
       send(ws, event);
       broadcast(room, event, ws);
       return;

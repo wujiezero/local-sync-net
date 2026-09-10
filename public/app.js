@@ -28,6 +28,8 @@ const els = {
   archiveList: $("archive-list"),
   archiveView: $("archive-view"),
   archivesLink: $("archives-link"),
+  archiveImport: $("archive-import"),
+  archiveImportFile: $("archive-import-file"),
   confirmModal: $("confirm-modal"),
   confirmCode: $("confirm-code"),
   confirmInput: $("confirm-input"),
@@ -637,11 +639,39 @@ function renderArchives() {
         </div>
         <div class="composer-actions">
           <button class="btn btn-ghost btn-mini" type="button" data-act="open-archive" data-id="${item.id}">查看</button>
+          <button class="btn btn-ghost btn-mini" type="button" data-act="rename-archive" data-id="${item.id}">重命名</button>
+          <a class="btn btn-ghost btn-mini" href="${exportHref(item.id)}" download>导出</a>
           <button class="btn btn-ghost btn-mini btn-danger" type="button" data-act="delete-archive" data-id="${item.id}">删除</button>
         </div>
       </div>`,
     )
     .join("");
+}
+
+function currentRoom() {
+  return els.room?.value.trim() || localStorage.getItem(ROOM_KEY) || "lan";
+}
+
+function exportHref(id) {
+  const room = encodeURIComponent(currentRoom());
+  return `/api/archives/${encodeURIComponent(id)}/export?room=${room}`;
+}
+
+async function importArchiveZip(file) {
+  if (!file) return;
+  const body = new FormData();
+  body.append("file", file, file.name);
+  const room = encodeURIComponent(currentRoom());
+  const device = encodeURIComponent(els.deviceName?.value.trim() || "import");
+  const res = await fetch(`/api/archives/import?room=${room}&deviceName=${device}`, { method: "POST", body });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    toast(data.error || "导入失败");
+    return;
+  }
+  if (Array.isArray(data.archives)) state.archives = data.archives;
+  renderArchives();
+  toast("已导入归档");
 }
 
 function openArchiveDrawer() {
@@ -797,6 +827,9 @@ function connect() {
       if (els.confirmInput) els.confirmInput.value = "";
       if (els.confirmModal) els.confirmModal.hidden = false;
       els.confirmInput?.focus();
+    } else if (msg.type === "archives") {
+      state.archives = msg.archives || [];
+      renderArchives();
     } else if (msg.type === "archive.deleted") {
       state.archives = msg.archives || [];
       if (state.openArchive?.id === msg.id) {
@@ -939,9 +972,23 @@ els.archiveList?.addEventListener("click", (ev) => {
     send({ type: "archive.open", id: btn.dataset.id });
     return;
   }
+  if (btn.dataset.act === "rename-archive") {
+    const current = state.archives.find((item) => item.id === btn.dataset.id);
+    const title = prompt("归档名称", current?.title || "");
+    if (title == null) return;
+    send({ type: "archive.rename", id: btn.dataset.id, title });
+    return;
+  }
   if (btn.dataset.act === "delete-archive") {
     send({ type: "archive.delete.challenge", id: btn.dataset.id });
   }
+});
+
+els.archiveImport?.addEventListener("click", () => els.archiveImportFile?.click());
+els.archiveImportFile?.addEventListener("change", () => {
+  const file = els.archiveImportFile.files?.[0];
+  if (file) importArchiveZip(file);
+  els.archiveImportFile.value = "";
 });
 
 els.confirmCancel?.addEventListener("click", closeConfirm);

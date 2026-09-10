@@ -1072,6 +1072,11 @@ textarea:focus,
   border-radius: 8px;
 }
 
+.archive-item .composer-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .toast {
   position: fixed;
   right: 18px;

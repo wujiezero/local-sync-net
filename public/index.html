@@ -156,8 +156,12 @@
       <div class="drawer-panel">
         <div class="panel-head">
           <h2>归档</h2>
-          <button id="archive-close" class="btn btn-ghost btn-mini" type="button">关闭</button>
+          <div class="composer-actions">
+            <button id="archive-import" class="btn btn-ghost btn-mini" type="button">导入 zip</button>
+            <button id="archive-close" class="btn btn-ghost btn-mini" type="button">关闭</button>
+          </div>
         </div>
+        <input id="archive-import-file" type="file" accept=".zip,application/zip" hidden />
         <div id="archive-list" class="archive-list"></div>
         <div id="archive-view" class="archive-view" hidden></div>
       </div>
