@@ -1,0 +1,16 @@
+{
+  "name": "ClipMesh",
+  "short_name": "ClipMesh",
+  "description": "局域网实时剪贴板",
+  "display": "standalone",
+  "background_color": "#010102",
+  "theme_color": "#010102",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

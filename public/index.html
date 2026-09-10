@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#010102" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="局域网实时剪贴板 — 文本、图片、附件在浏览器间同步" />
+    <title>ClipMesh · LAN Clipboard</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+              <rect x="9" y="7" width="14" height="18" rx="2.5" stroke="currentColor" stroke-width="1.7" />
+              <rect x="12" y="5.5" width="8" height="3.5" rx="1.2" stroke="currentColor" stroke-width="1.5" />
+              <path d="M13 14.5h8M13 18.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          </span>
+          <div class="brand-copy">
+            <h1>ClipMesh</h1>
+            <p>局域网实时剪贴板</p>
+          </div>
+        </div>
+
+        <div class="topbar-meta">
+          <nav class="nav">
+            <a href="/" aria-current="page">时间线</a>
+            <a id="archives-link" href="#archives">归档</a>
+            <a id="settings-link" href="/settings">标签配置</a>
+          </nav>
+          <span id="status" class="status" data-state="connecting">
+            <i></i><span>连接中</span>
+          </span>
+          <span id="peer-count" class="meta-chip">0 台在线</span>
+        </div>
+      </header>
+
+      <aside class="rail">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>房间</h2>
+            <span class="hint">同一房间即同步</span>
+          </div>
+          <label class="field">
+            <span>房间名</span>
+            <input id="room" type="text" maxlength="48" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span>设备名</span>
+            <input id="device-name" type="text" maxlength="40" autocomplete="off" />
+          </label>
+          <button id="join" class="btn btn-primary" type="button">加入房间</button>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>在线设备</h2>
+            <span id="peer-hint" class="hint">等待加入</span>
+          </div>
+          <ul id="peers" class="peer-list"></ul>
+        </section>
+
+        <section class="panel panel-quiet">
+          <p class="howto">
+            文本和附件在同一个发送框。归档会收起当前时间线，历史仍可查看；删除归档需验证码。
+          </p>
+          <p id="lan-url" class="howto mono" hidden></p>
+        </section>
+      </aside>
+
+      <main class="stage">
+        <section class="composer panel">
+          <div class="panel-head">
+            <h2>发送到网格</h2>
+            <span id="limit-hint" class="hint">附件上限 32 MB</span>
+          </div>
+
+          <div id="reply-bar" class="reply-bar" hidden>
+            <div class="reply-bar-copy">
+              <span class="hint"><span id="compose-mode">回复</span> <b id="reply-name"></b></span>
+              <p id="reply-preview" class="reply-preview"></p>
+            </div>
+            <button id="reply-cancel" class="btn btn-ghost btn-mini" type="button">取消</button>
+          </div>
+
+          <div id="composer-box" class="composer-box">
+            <input id="file-input" type="file" hidden />
+            <textarea
+              id="draft"
+              placeholder="输入或粘贴文本，也可把图片 / 附件拖进来… Ctrl/⌘ + Enter 发送"
+              maxlength="200000"
+            ></textarea>
+            <div id="attach-preview" class="attach-preview" hidden></div>
+            <div class="composer-bar">
+              <div class="composer-actions">
+                <button id="pick-file" class="btn btn-ghost" type="button">附件</button>
+                <button id="copy-os" class="btn btn-ghost" type="button">剪贴板</button>
+                <button id="send" class="btn btn-primary" type="button">发送</button>
+              </div>
+              <span class="composer-meta">
+                <span id="format-hint" class="hint">文本</span>
+                <span id="draft-count" class="hint mono">0</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="tag-picker">
+            <div class="panel-head" style="margin-bottom:8px">
+              <span class="hint">选用标签</span>
+              <a class="hint" href="/settings">去配置</a>
+            </div>
+            <div id="draft-tags" class="chip-row"></div>
+          </div>
+        </section>
+
+        <section class="timeline-wrap">
+          <div class="panel-head timeline-head">
+            <h2>同步时间线</h2>
+            <div class="timeline-tools">
+              <span id="filter-count" class="hint"></span>
+              <button id="reset-filters" class="btn btn-ghost btn-mini" type="button">重置筛选</button>
+              <button id="archive-room" class="btn btn-ghost" type="button">归档房间</button>
+            </div>
+          </div>
+          <div class="filters">
+            <div id="tag-filters" class="chip-row"></div>
+            <div class="time-filters">
+              <label class="field time-field">
+                <span>从</span>
+                <input id="from-time" type="datetime-local" />
+              </label>
+              <label class="field time-field">
+                <span>到</span>
+                <input id="to-time" type="datetime-local" />
+              </label>
+            </div>
+          </div>
+          <div id="timeline" class="timeline"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="archive-drawer" class="drawer" hidden>
+      <div class="drawer-panel">
+        <div class="panel-head">
+          <h2>归档</h2>
+          <button id="archive-close" class="btn btn-ghost btn-mini" type="button">关闭</button>
+        </div>
+        <div id="archive-list" class="archive-list"></div>
+        <div id="archive-view" class="archive-view" hidden></div>
+      </div>
+    </div>
+
+    <div id="confirm-modal" class="modal" hidden>
+      <div class="modal-card">
+        <h2>删除归档</h2>
+        <p class="howto">删除后无法恢复。请输入验证码确认：<b id="confirm-code" class="mono"></b></p>
+        <input id="confirm-input" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="6 位验证码" />
+        <div class="composer-actions" style="margin-top:12px">
+          <button id="confirm-cancel" class="btn btn-ghost" type="button">取消</button>
+          <button id="confirm-ok" class="btn btn-primary" type="button">确认删除</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
