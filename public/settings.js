@@ -1,4 +1,4 @@
-import { toast } from "./toast.js?v=m3";
+import { toast } from "./toast.js?v=m7";
 import { openDialog } from "./dialog.js";
 
 const $ = (id) => document.getElementById(id);

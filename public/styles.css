@@ -54,6 +54,8 @@ html,
 body {
   margin: 0;
   min-height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background:
     radial-gradient(1200px 480px at 12% -10%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 55%),
     var(--canvas);
@@ -99,7 +101,13 @@ textarea {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   grid-template-rows: 56px minmax(0, 1fr);
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rail {
+  overflow-y: auto;
 }
 
 .topbar {
@@ -452,7 +460,8 @@ textarea:focus,
   min-height: 40px;
   max-height: 40vh;
   resize: none;
-  padding: 9px 4px;
+  padding: 9px 6px;
+  overflow-y: auto;
   line-height: 1.5;
   border: 0;
   background: transparent;
@@ -485,6 +494,15 @@ textarea:focus,
 .composer-send {
   background: var(--primary);
   color: var(--on-primary);
+  font-size: 0;
+}
+
+.composer-send svg {
+  flex: none;
+}
+
+.composer-send[data-mode="edit"] {
+  background: var(--success);
 }
 
 .composer-send:hover {
@@ -546,8 +564,36 @@ textarea:focus,
 
 .timeline-wrap {
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.thread,
+.thread-replies,
+.clip,
+.clip-body,
+.clip-head,
+.clip-head-main,
+.md-body,
+.code-block,
+.clip-file,
+.clip-quote {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.clip-text,
+.md-body p,
+.md-body li,
+.clip-file a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.md-body table {
+  display: block;
+  overflow-x: auto;
 }
 
 .timeline-head {
@@ -792,7 +838,9 @@ textarea:focus,
 
 .timeline {
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: grid;
   gap: 10px;
   padding-right: 2px;
@@ -881,9 +929,12 @@ textarea:focus,
 }
 
 .clip.age-archive {
-  opacity: 0.7;
+  opacity: 0.72;
   background: var(--canvas);
-  border-style: dashed;
+}
+
+.clip.age-archive.is-root {
+  border-left-color: var(--hairline-strong);
 }
 
 .clip-meta {
@@ -1727,19 +1778,98 @@ a.btn.is-pressed {
   }
 
   .clip-actions {
-    flex-wrap: wrap;
+    display: flex;
+    flex-wrap: nowrap;
     gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .clip-actions::-webkit-scrollbar {
+    display: none;
   }
 
   .clip-actions .btn {
-    height: 32px;
-    flex: 1 1 auto;
-    min-width: 68px;
+    height: 30px;
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 0 12px;
+    font-size: 12px;
   }
 
   .thread-replies {
-    margin-left: 8px;
-    padding-left: 10px;
+    margin-left: 6px;
+    padding-left: 8px;
+  }
+
+  .clip-code {
+    padding: 10px;
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 260px;
+  }
+
+  .code-bar {
+    padding: 5px 10px;
+  }
+
+  .clip-quote p {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .clip-image {
+    max-height: 240px;
+  }
+
+  .md-body {
+    font-size: 13.5px;
+  }
+
+  .md-body h1 {
+    font-size: 17px;
+  }
+
+  .md-body h2 {
+    font-size: 15.5px;
+  }
+
+  .md-body h3,
+  .md-body h4 {
+    font-size: 14px;
+  }
+
+  .clip.age-archive {
+    border-style: solid;
+  }
+
+  .clip-body.is-folded .fold-content {
+    max-height: 7.2em;
+  }
+
+  .chip {
+    height: 30px;
+    padding: 0 11px;
+  }
+
+  .draft-tags {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .draft-tags::-webkit-scrollbar {
+    display: none;
+  }
+
+  .draft-tags .chip {
+    flex: 0 0 auto;
   }
 
   .time-filters {

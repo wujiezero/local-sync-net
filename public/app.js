@@ -1,4 +1,4 @@
-import { toast } from "./toast.js?v=m3";
+import { toast } from "./toast.js?v=m7";
 import { openDialog } from "./dialog.js";
 import { marked } from "./vendor/marked.esm.js";
 import DOMPurify from "./vendor/purify.es.mjs";
@@ -449,6 +449,13 @@ function clearReply() {
   cancelComposeMode();
 }
 
+function setSendMode(label, mode) {
+  if (!els.send) return;
+  els.send.setAttribute("aria-label", label);
+  els.send.title = label;
+  els.send.dataset.mode = mode;
+}
+
 function updateReplyBar() {
   if (!els.replyBar) return;
   const editing = currentEdit();
@@ -457,27 +464,27 @@ function updateReplyBar() {
     if (els.composeMode) els.composeMode.textContent = "编辑";
     els.replyName.textContent = formatSeq(editing.seq);
     els.replyPreview.textContent = previewOf(editing);
-    els.send.textContent = "保存修改";
+    setSendMode("保存修改", "edit");
     return;
   }
   if (els.replyModal && !els.replyModal.hidden) {
     els.replyBar.hidden = true;
     if (els.composeMode) els.composeMode.textContent = "回复";
-    els.send.textContent = "发送";
+    setSendMode("发送", "send");
     return;
   }
   const target = state.replyTo;
   if (!target) {
     els.replyBar.hidden = true;
     if (els.composeMode) els.composeMode.textContent = "回复";
-    els.send.textContent = "发送";
+    setSendMode("发送", "send");
     return;
   }
   els.replyBar.hidden = false;
   if (els.composeMode) els.composeMode.textContent = "回复";
   els.replyName.textContent = target.deviceName || "匿名";
   els.replyPreview.textContent = previewOf(target);
-  els.send.textContent = "发送回复";
+  setSendMode("发送回复", "reply");
 }
 
 function currentEdit() {
